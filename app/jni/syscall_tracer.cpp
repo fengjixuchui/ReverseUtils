@@ -13,6 +13,7 @@
 #include <android/log.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sstream>
 #include "syscallents_arm.h"
 
 struct ProcessStatus {
@@ -34,28 +35,70 @@ void _log(const char *fmt, ...) {
 
 #include <map>
 class SysTracer {
+    //TODO:support execve into 64
     std::map<pid_t, ProcessStatus> mStatus;
-public:
-    SysTracer() {
 
-    }
-    ~SysTracer() {
-
-    }
-
-    const char *get_syscall_name(int id) {
-        if (id >= MAX_SYSCALL_NUM) {
-            _log("get_syscal_name %d out-of-range %d", id, MAX_SYSCALL_NUM);
-            //abort();
-            return "[unknown]";
+    const char *read_string(char *buf, size_t len, pid_t pid, unsigned long addr) {
+        if (len % 4) {
+            _log("ERROR only 4 align size if support!!!");
+            abort();
+            return 0;
         }
-        return syscalls[id].name;
+        unsigned long off = 0;
+        unsigned step = sizeof(long);
+        while(off < len) {
+            long tmp = ptrace(PTRACE_PEEKDATA, pid, addr + off, 0);
+            if (tmp < 0) {
+                _log("PTRACE_PEEKDATA error");
+                buf[off] = 0;
+                //abort();
+            }
+
+            memcpy(buf+off, &tmp, step);
+            off += step;
+
+            char *m = (char*)&tmp;
+            bool eos = false;
+            for (int i = 0 ; i < step; i++) {
+                if (m[i] == 0) {
+                    eos = true;
+                    break;
+                }
+            }
+            if (eos) {
+                break;
+            }
+        }
+
+        if (off >= len) {
+            buf[len - 1] = 0;
+        }
+        return buf;
+    }
+
+    bool get_syscall_entry(syscall_entry &entry, int id) {
+        if (id >= MAX_SYSCALL_NUM) {
+            _log("get_syscal_entry %d out-of-range %d", id, MAX_SYSCALL_NUM);
+            //abort();
+            return false;
+        }
+        entry = syscalls[id];
+        return true;
     }
 
 //#define PTRACE_GETHBPREGS 29
 //#define PTRACE_SETHBPREGS 30
 
-    int continue_syscall_and_wait(pid_t child, int signal = 0)
+    void remove_and_clear_id(pid_t &pid) {
+        mStatus.erase(pid);
+        pid = 0;
+    }
+
+    /*
+     * params child[in/out] the pid to continue, return the pid return by waitpid(-1)
+     * signal
+     */
+    int continue_syscall_and_wait(pid_t &pid, int signal = 0)
     {
         int status;
         int err = 0;
@@ -64,17 +107,20 @@ public:
         // the tracee (child) continue its execution
         // and stop whenever there's a syscall being
         // executed (SIGTRAP is captured).
-        err = ptrace(PTRACE_SYSCALL, child, 0, signal);
-        if (err == -1) {
-            _log("ptrace error");
-            return err;
+        if (pid != 0) {
+            err = ptrace(PTRACE_SYSCALL, pid, 0, signal);
+            if (err == -1) {
+                _log("ptrace error %s", strerror(errno));
+                remove_and_clear_id(pid);
+                return err;
+            }
         }
 
         // Wait until the next signal arrives
         // When the running tracee enters ptrace-stop, it
         // notifies its tracer using waitpid(2)
         // (or one of the other "wait" system calls).
-        waitpid(child, &status, 0);
+        pid = waitpid(-1, &status, 0);
 
         // Ptrace-stopped tracees are reported as returns
         // with pid greater than 0 and WIFSTOPPED(status) true.
@@ -91,70 +137,92 @@ public:
         //      that we set the PTRACE_O_TRACESYSGOOD option)
         if (WIFSTOPPED(status) && WSTOPSIG(status) & 0x80) {
             //stop by get syscall
-            _log("pid %d stop sig 0x%x", child, WSTOPSIG(status));
+            _log("pid %d stop sig 0x%x", pid, WSTOPSIG(status));
             return 0;
         }
         if (WIFSIGNALED(status)) {
-            _log("pid %d term by signal %d", child, WTERMSIG(status));
+            _log("pid %d term by signal %d", pid, WTERMSIG(status));
+            remove_and_clear_id(pid);
             return 2;
         }
 
         // Check whether the child exited normally.
         if (WIFEXITED(status)) {
-            _log("pid %d exited", child);
+            _log("pid %d exited", pid);
+            remove_and_clear_id(pid);
             return 1;
         }
 
         if (status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8))) {
             //stop by execve
-            _log("pid %d stop by execve", child);
-            return continue_syscall_and_wait(child);
+            _log("pid %d stop by execve", pid);
+            return continue_syscall_and_wait(pid);
         }
         if (status>>8 == (SIGTRAP | (PTRACE_EVENT_FORK<<8)) ||
             status>>8 == (SIGTRAP | (PTRACE_EVENT_VFORK<<8)) ||
             status>>8 == (SIGTRAP | (PTRACE_EVENT_CLONE<<8))) {
-            _log("pid %d stop by fork/vfork/clone", child);
+            _log("pid %d stop by fork/vfork/clone", pid);
             pid_t new_pid = 0;
-            if (ptrace(PTRACE_GETEVENTMSG, child, 0, &new_pid)
-                != -1) {
+            if (ptrace(PTRACE_GETEVENTMSG, pid, 0, &new_pid) != -1) {
                 _log("process %d created\n", new_pid);
+                mStatus[new_pid] = ProcessStatus();
                 ptrace(PTRACE_SETOPTIONS, new_pid, 0, PTRACE_O_TRACESYSGOOD|PTRACE_O_TRACEEXEC|
                                                       PTRACE_O_TRACECLONE|PTRACE_O_TRACEFORK|PTRACE_EVENT_VFORK);
             }
-            return continue_syscall_and_wait(child);
+            return continue_syscall_and_wait(pid);
         }
 
         if (WIFSTOPPED(status)) {
             int sig = WSTOPSIG(status);
             _log("get stop status 0x%x signal %d pass to tracee", status, sig);
-            return continue_syscall_and_wait(child, sig);
+            return continue_syscall_and_wait(pid, sig);
         }
 
         int n1 = WIFSTOPPED(status);
         int sig = WSTOPSIG(status);
         _log("warning unknown status 0x%x WIFSTOPPED(%d), WSTOPSIG(%d)", status, n1, sig);
+        remove_and_clear_id(pid);
         return 3;
     }
 
-//TODO:support execve into 64
 
     void on_before_syscall(pid_t pid) {
         struct pt_regs regs = {0};
         ptrace(PTRACE_GETREGS, pid, NULL, &regs);
         int sysid = regs.ARM_r7;
-        int p0 = regs.ARM_r0;
-        int p1 = regs.ARM_r1;
-        int p2 = regs.ARM_r2;
-        int p3 = regs.ARM_r3;
-        int p4 = regs.ARM_r4;
-        int p5 = regs.ARM_r5;
-        int p6 = regs.ARM_r6;
         int pc = regs.ARM_pc;
         int lr = regs.ARM_lr;
+        syscall_entry e = {0};
+        bool r = get_syscall_entry(e, sysid);
+        if (!r)
+            return;
 
-        const char *name = get_syscall_name(sysid);
-        _log("(%d)(%s) (0x%x), [0x%08X] [0x%08X] [0x%08X] [0x%08X] [0x%08X] [0x%08X]", pid, name, sysid, p0, p1, p2, p3, p4, p5, p6);
-        _log("(%d)(%s) (0x%x), pc[0x%08X] lr[0x%08X]", pid, name, sysid, pc, lr);
+        const char *name = e.name;
+        std::stringstream ss;
+        char tmpbuf[32] = {0};
+        for (int i = 0; i < e.nargs; i++) {
+            int type = e.args[i];
+            if (type == ARG_STR) {
+                read_string(tmpbuf, sizeof(tmpbuf), pid, (unsigned long)regs.uregs[i]);
+                ss<<","<<tmpbuf;
+            }
+            else if (type == ARG_INT) {
+                ss<<","<<regs.uregs[i];
+            }
+            else if (type == ARG_PTR) {
+                char tmp[16] = {0};
+                sprintf(tmp, ",0x%08X", (unsigned)regs.uregs[i]);
+                ss << tmp;
+            }
+
+        }
+
+        std::string s = ss.str();
+        const char *cs = s.c_str();
+        if (cs[0] != 0) {
+            cs += 1;
+        }
+        _log("[%d](0x%x) %s(%s) pc[0x%08X] lr[0x%08X]", pid, sysid, name, cs, pc, lr);
     }
 
     void on_after_syscall(pid_t pid) {
@@ -162,37 +230,64 @@ public:
         ptrace(PTRACE_GETREGS, pid, NULL, &regs2);
         int retval = regs2.ARM_r0;
         int sysid = regs2.ARM_r7;
-        const char *name = get_syscall_name(sysid);
-        _log("(%d)(%s) (0x%x) return %d\n", pid, name, sysid, retval);
+        syscall_entry e = {0};
+        bool r = get_syscall_entry(e, sysid);
+        if (!r)
+            return;
+
+        const char *name = e.name;
+        _log("[%d](0x%x) (%s) return %d\n", pid, sysid, name, retval);
+    }
+
+    ProcessStatus &safe_get(pid_t pid) {
+        std::map<pid_t, ProcessStatus>::iterator it = mStatus.find(pid);
+        if (it != mStatus.end()) {
+            return it->second;
+        }
+        else {
+            _log("ERROR pid %d not find in maps", pid);
+            abort();
+        }
+        _log("ERROR pid %d impossible here", pid);
+        abort();
+    }
+
+public:
+    SysTracer() {
+
+    }
+    ~SysTracer() {
+
     }
 
     void run(pid_t pid) {
-        int val = 0;
-        _log("before wait");
-        wait(&val); //等待kill stop
-        _log("after wait");
 
         ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD|PTRACE_O_TRACEEXEC|
                                           PTRACE_O_TRACECLONE|PTRACE_O_TRACEFORK|PTRACE_EVENT_VFORK);
-        if(WIFEXITED(val)) {
-            _log("break1\n");
-        }
-        //ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+        mStatus[pid] = ProcessStatus();
         while(1)
         {
             int err = continue_syscall_and_wait(pid);
             if (err != 0) {
-                break;
+                if (mStatus.empty()) {
+                    break;
+                }
+                continue;
             }
 
-            on_before_syscall(pid);
-
-            err = continue_syscall_and_wait(pid);
-            if (err != 0) {
-                break;
+            ProcessStatus &st = safe_get(pid);
+            if (st.status == 0) {
+                st.status = 1;
+                on_before_syscall(pid);
             }
-
-            on_after_syscall(pid);
+            else if (st.status == 1){
+                st.status = 0;
+                on_after_syscall(pid);
+            }
+            else {
+                _log("ERROR impossible status %d", st.status);
+                abort();
+            }
         }
         _log("syscall moniter exit");
     }
@@ -200,12 +295,13 @@ public:
 };
 
 void *_thread_p(void *p) {
-    sleep(1000);
+    //sleep(1000);
     return 0;
 }
 
 void sys_trace() {
     signal(SIGCHLD, SIG_IGN);
+    int v = 0;
     int pid = fork();
     if(pid == 0)
     {
@@ -215,11 +311,19 @@ void sys_trace() {
         //execl("/system/bin/ls", "ls", NULL);
         pthread_t t;
         _log("before pthread_create");
-        pthread_create(&t, 0, _thread_p, 0);
+        //pthread_create(&t, 0, _thread_p, 0);
+        /*
+        pid_t n = fork();
+        if (n==0) {
+            sleep(1);
+            syscall(1);
+            return;
+        }
+         */
         _log("after pthread_create");
 
         _log("before write");
-        syscall(4, 2, "c111\n", 4);
+        syscall(4, 2, "c111dstt买\n", 4);
         _log("after write");
         //exit(1);
         kill(getpid(), SIGINT);
@@ -227,6 +331,13 @@ void sys_trace() {
         //sleep(3);
     }
     else {
+        int val = 0;
+        _log("before wait");
+        wait(&val); //等待kill stop
+        _log("after wait");
+        if(WIFEXITED(val)) {
+            _log("break1\n");
+        }
 
         SysTracer tracer;
         tracer.run(pid);
