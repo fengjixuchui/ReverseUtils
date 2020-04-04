@@ -27,15 +27,19 @@ typedef jmethodID (*get_method_id_type)(JNIEnv *env, jclass clz, const char *nam
 get_method_id_type old_get_method_id = 0;
 jmethodID my_get_method_id(JNIEnv *env, jclass clz, const char *name, const char *sig) {
 
+    char tname[255] = "";
+    prctl(PR_GET_NAME, tname, 0, 0);
     jmethodID r = old_get_method_id(env, clz, name, sig);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "GetMethodId %p %s %s tid %d return %p", clz, name, sig, gettid(), r);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "GetMethodId %p %s %s tid %d %s return %p", clz, name, sig, gettid(), tname, r);
     return r;
 }
 
 get_method_id_type old_get_static_method_id = 0;
 jmethodID my_get_static_method_id(JNIEnv *env, jclass clz, const char *name, const char *sig) {
+    char tname[255] = "";
+    prctl(PR_GET_NAME, tname, 0, 0);
     jmethodID r = old_get_static_method_id(env, clz, name, sig);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "GetStaticMethodId %p %s %s tid %d return %p", clz, name, sig, gettid(), r);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "GetStaticMethodId %p %s %s tid %d %s return %p", clz, name, sig, gettid(), tname, r);
     return r;
 }
 

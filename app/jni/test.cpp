@@ -96,20 +96,15 @@ int my_pthread_create(pthread_t *thread, pthread_attr_t const * attr,
 
 
 typedef int (*cb_type) (void *p);
-cb_type cb = 0;
 cb_type cb2 = 0;
-
-int my_cb (void *p) {
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cb call skip!!!");
-    return 0;
-    return cb(p);
-}
 
 int my_anti_hook_proc(void *p) {
     //DUMP_CALL_STACK("lib-rev-dj");
     //注意，不能return，可能dy原来这个函数根本没打算return，以return就会crash，所以不返回就行
+    char name[255] = "";
+    prctl(PR_GET_NAME, name, 0, 0);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cb2 call hold %d %s!!!", gettid(), name);
     sleep(10000000);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cb2 call skip!!!");
     return 0;
     //return cb2(p);
 }
@@ -120,7 +115,7 @@ void *dummp_thread(void *p) {
     JNIEnv *env = 0;
     g_vm->AttachCurrentThread(&env, 0);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "in thread %d env %p", gettid(), env);
-    sleep(0);
+    sleep(1);
     int n = 64;
     jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     jbyteArray barray = env->NewByteArray(n);
@@ -135,6 +130,23 @@ void *dummp_thread(void *p) {
     return 0;
 }
 
+typedef jobject (*meta_type)(JNIEnv *env, jclass clz, jobject ctx, jobject arg);
+meta_type old_meta = 0;
+
+jobject my_meta(JNIEnv *env, jclass clz, jobject ctx, jobject arg) {
+
+    pid_t tid = gettid();
+    char name[255] = "";
+
+    prctl(PR_GET_NAME, name, 0, 0);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d [%s]!!!", tid, name);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "hold...");
+    sleep(1000000);
+    jobject r = old_meta(env, clz, ctx, arg);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d return %p!!!", tid, r);
+    return r;
+}
+
 jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
     pid_t tid = gettid();
     char name[255] = "";
@@ -142,11 +154,6 @@ jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
     prctl(PR_GET_NAME, name, 0, 0);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d [%s]!!!", tid, name);
     wait_for_attach(tid);
-
-    unsigned *ptr1 = (unsigned*)((unsigned)g_base_addr + 0x93da4);
-    unsigned *ptr2 = (unsigned*)((unsigned)g_base_addr + 0x95f3c);
-
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev %d ptr1 0x%08X ptr2 0x%08X", tid, *ptr1, *ptr2);
 
     /*
     int n = env->GetArrayLength(p2);
@@ -203,6 +210,13 @@ jint my_jni_onload(JavaVM *vm) {
     jbyteArray barray = env->NewByteArray(n);
     env->SetByteArrayRegion(barray, 0, n, b);
 
+    jint p1 = 1585841725;
+    jclass cls = env->FindClass("com/ss/sys/ces/a");
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p", lev_ori);
+    jbyteArray rlev = lev_ori(env, cls, p1, barray);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p", rlev);
+
+    /*
     map<unsigned , unsigned char> m;
     m[0x000942C8] = 0x1;
     m[0x000942C9] = 0x0;
@@ -375,13 +389,7 @@ jint my_jni_onload(JavaVM *vm) {
         *(baddr+off) = v;
     }
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force write lev");
-
-    jint p1 = 1585841725;
-    jclass cls = env->FindClass("com/ss/sys/ces/a");
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p", lev_ori);
-    jbyteArray rlev = lev_ori(env, cls, p1, barray);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p", rlev);
-
+    */
 
     /*
     pthread_t t;
@@ -390,13 +398,7 @@ jint my_jni_onload(JavaVM *vm) {
      */
     //pthread_join(t, (void**)&rp);
 
-            /*
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call 2 lev %p", lev_ori);
-    rlev = lev_ori(env, cls, p1, barray);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call 2 lev return %p", rlev);
-    syscall(1, 11);
-             */
-    wait_for_attach(gettid());
+    //wait_for_attach(gettid());
     return r;
 }
 
@@ -426,17 +428,6 @@ __attribute__((constructor)) void __init__() {
     MapInfo mapInfo;
     get_map_infos(&mapInfo, "libcms.so");
 
-    /*
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cms base %p", mapInfo.baseAddr);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cms end %p", mapInfo.endAddr);
-
-    void *hook_anti_cb = (void*)((unsigned)mapInfo.baseAddr + 0x0005C070+1);
-
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook");
-    MSHookFunction((void*)hook_anti_cb, (void*)my_cb, (void**)&cb);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook %p", cb);
-     */
-
     g_base_addr = mapInfo.baseAddr;
     void *ori_load = dlsym(cms, "JNI_OnLoad");
 
@@ -452,6 +443,14 @@ __attribute__((constructor)) void __init__() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook lev %p", lev_ori);
 
     /*
+    void *meta = (void*)((unsigned)g_base_addr + 0x65cb4+1);
+
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook meta");
+    MSHookFunction((void*)meta, (void*)my_meta, (void**)&old_meta);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook meta %p", old_meta);
+     */
+
+    /*
     //0x00065ED0 这个是反hook的函数
     //但是这样hook会导致网络登录卡住，这是由于这个函数有其他功能的原因，暂时不追究
     void *hook_anti_cb2 = (void*)((unsigned)mapInfo.baseAddr + 0x00065ED0+1);
@@ -460,16 +459,18 @@ __attribute__((constructor)) void __init__() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook2");
     MSHookFunction((void *) hook_anti_cb2, (void *) my_anti_hook_proc, (void **) &cb2);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook 2 %p", cb2);
+     */
 
+
+
+    /*
     void *syscall = (void*)((unsigned)mapInfo.baseAddr + 0x00009E7C);
-
-
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook");
     MSHookFunction((void*)syscall, (void*)__sys_c, (void**)&sys_ori);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook %p", sys_ori);
-    */
+     */
 
-    void *clone_call = (void*)((unsigned)mapInfo.baseAddr + 0x000189EC);
+    //void *clone_call = (void*)((unsigned)mapInfo.baseAddr + 0x000189EC);
     /*
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook clone");
     MSHookFunction((void*)clone_call, (void*)__sys_c2, (void**)&sys_ori2);
@@ -482,11 +483,9 @@ __attribute__((constructor)) void __init__() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "mprotect %p", b);
      */
 
-    /*
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook pthread");
     MSHookFunction((void*)pthread_create, (void*)my_pthread_create, (void**)&pthread_create_ori);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook pthread %p", pthread_create_ori);
-     */
 
     __android_log_print(ANDROID_LOG_FATAL, "librev-dj", "pkgName %s here", buf);
     //wait_for_attach();
