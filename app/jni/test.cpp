@@ -130,20 +130,60 @@ void *dummp_thread(void *p) {
     return 0;
 }
 
-typedef jobject (*meta_type)(JNIEnv *env, jclass clz, jobject ctx, jobject arg);
+void force_call_lev(JNIEnv *env) {
+
+    int n = 64;
+    jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    jbyteArray barray = env->NewByteArray(n);
+    env->SetByteArrayRegion(barray, 0, n, b);
+
+    jint p1 = 1585841725;
+    jclass cls = env->FindClass("com/ss/sys/ces/a");
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p tid %d", lev_ori, gettid());
+    jbyteArray rlev = lev_ori(env, cls, p1, barray);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p", rlev);
+}
+
+typedef jobject (*meta_type)(JNIEnv *env, jclass clz, jint n, jobject ctx, jobject arg);
 meta_type old_meta = 0;
 
-jobject my_meta(JNIEnv *env, jclass clz, jobject ctx, jobject arg) {
+jobject my_meta(JNIEnv *env, jclass clz, jint optype, jobject ctx, jobject arg) {
 
     pid_t tid = gettid();
     char name[255] = "";
 
     prctl(PR_GET_NAME, name, 0, 0);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d [%s]!!!", tid, name);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "hold...");
-    sleep(1000000);
-    jobject r = old_meta(env, clz, ctx, arg);
+    /*
+    if (optype == 101) {
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d [%s] %d skip", tid, name, optype);
+        return 0;
+    }
+     */
+    const char *sarg = "null";
+    if (arg != 0) {
+        if ((optype >= 101 && optype <=110) ||
+                optype == 222 || optype == 302 || optype == 1020) {
+
+            //string
+            jstring myarg = (jstring)arg;
+            sarg = env->GetStringUTFChars(myarg, 0);
+        }
+        else if (optype == 601 || optype == 200) {
+            jbyteArray myarg = (jbyteArray)arg;
+            sarg = "[bytes]";
+        }
+        else {
+            sarg = "[unknown]";
+        }
+    }
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta call tid %d [%s] %d %p %s!!!", tid, name, optype, ctx, sarg);
+
+    jobject r = old_meta(env, clz, optype, ctx, arg);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d return %p!!!", tid, r);
+    /*
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force lev after meta");
+    force_call_lev(env);
+     */
     return r;
 }
 
@@ -153,7 +193,7 @@ jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
 
     prctl(PR_GET_NAME, name, 0, 0);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d [%s]!!!", tid, name);
-    wait_for_attach(tid);
+    //wait_for_attach(tid);
 
     /*
     int n = env->GetArrayLength(p2);
@@ -177,7 +217,7 @@ jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
 
     jbyteArray r = lev_ori(env, thiz, p1, p2);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d return %p!!!", tid, (void*)r);
-    syscall(1, 231);
+    //syscall(1, 231);
 
     return r;
 }
@@ -195,7 +235,7 @@ jint my_jni_onload(JavaVM *vm) {
     JNIEnv *env = 0;
     vm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
-    hook_jni(env);
+    //hook_jni(env);
     jint r = old_jni_onload(vm);
 
     unsigned *ptr1 = (unsigned*)((unsigned)g_base_addr + 0x93da4);
@@ -205,17 +245,11 @@ jint my_jni_onload(JavaVM *vm) {
     //prctl(PR_SET_NAME, name, 0, 0);
     prctl(PR_GET_NAME, name, 0, 0);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "jni_onload %d %s ptr1 0x%08X ptr2 0x%08X", gettid(), name, *ptr1, *ptr2);
-    int n = 64;
-    jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-    jbyteArray barray = env->NewByteArray(n);
-    env->SetByteArrayRegion(barray, 0, n, b);
 
-    jint p1 = 1585841725;
-    jclass cls = env->FindClass("com/ss/sys/ces/a");
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p", lev_ori);
-    jbyteArray rlev = lev_ori(env, cls, p1, barray);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p", rlev);
-
+    /*
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev after jni onload");
+    force_call_lev(env);
+     */
     /*
     map<unsigned , unsigned char> m;
     m[0x000942C8] = 0x1;
@@ -442,13 +476,11 @@ __attribute__((constructor)) void __init__() {
     MSHookFunction((void*)lev, (void*)my_lev, (void**)&lev_ori);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook lev %p", lev_ori);
 
-    /*
     void *meta = (void*)((unsigned)g_base_addr + 0x65cb4+1);
 
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook meta");
     MSHookFunction((void*)meta, (void*)my_meta, (void**)&old_meta);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook meta %p", old_meta);
-     */
 
     /*
     //0x00065ED0 这个是反hook的函数
@@ -460,7 +492,6 @@ __attribute__((constructor)) void __init__() {
     MSHookFunction((void *) hook_anti_cb2, (void *) my_anti_hook_proc, (void **) &cb2);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook 2 %p", cb2);
      */
-
 
 
     /*
@@ -483,9 +514,11 @@ __attribute__((constructor)) void __init__() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "mprotect %p", b);
      */
 
+    /*
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook pthread");
     MSHookFunction((void*)pthread_create, (void*)my_pthread_create, (void**)&pthread_create_ori);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook pthread %p", pthread_create_ori);
+     */
 
     __android_log_print(ANDROID_LOG_FATAL, "librev-dj", "pkgName %s here", buf);
     //wait_for_attach();
