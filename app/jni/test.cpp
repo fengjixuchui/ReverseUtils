@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <linux/prctl.h>
+#include <dirent.h>
 #include "StackDump.h"
 #include "ElfUtils.h"
 
@@ -25,6 +26,9 @@ Java_com_reverse_my_reverseutils_MainActivity_stringFromJNI(
         jobject /* this */) {
 
     //sys_trace();
+    char a = -71;
+    unsigned int b = (unsigned int)a;
+
     std::string hello = "Hello from C++";
     return env->NewStringUTF(hello.c_str());
 }
@@ -50,6 +54,47 @@ int get_tracer(pid_t pid) {
     return iid;
 
 }
+
+int get_tids(void (*func)(pid_t, void *aux),void*aux){
+    DIR *proc_dir;
+    char dirname[256] = {0};
+    pid_t pid;
+    if ( ! func ) return -1;
+
+    snprintf(dirname, sizeof(dirname), "/proc/%d/task", getpid());
+    proc_dir = opendir(dirname);
+
+    if (proc_dir) {
+        /*  /proc available, iterate through tasks... */
+        struct dirent *entry;
+        while ((entry = readdir(proc_dir)) != NULL) {
+            if(entry->d_name[0] == '.')
+                continue;
+            pid = atoi(entry->d_name);
+            func(pid, aux);
+        }
+        closedir(proc_dir);
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+void tids_callback(pid_t pid, void *aux) {
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "tid %d", pid);
+    pid_t cur_thread = gettid();
+    if (pid != cur_thread && pid != getpid()) {
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "stoping thread %d", pid);
+        kill(pid, SIGSTOP);
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after stoping thread %d", pid);
+    }
+}
+
+void stop_all_others_threads() {
+    get_tids(tids_callback, 0);
+}
+
+
 
 void wait_for_attach(pid_t pid) {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "waiting attach %d...", pid);
@@ -111,42 +156,64 @@ int my_anti_hook_proc(void *p) {
 
 typedef jbyteArray (*lev_type) (JNIEnv *env, jclass thiz, jint p1, jbyteArray p2);
 lev_type lev_ori=0;
-void *dummp_thread(void *p) {
-    JNIEnv *env = 0;
-    g_vm->AttachCurrentThread(&env, 0);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "in thread %d env %p", gettid(), env);
-    sleep(1);
-    int n = 64;
-    jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-    jbyteArray barray = env->NewByteArray(n);
-    env->SetByteArrayRegion(barray, 0, n, b);
-
-    jint p1 = 1585841725;
-    jclass cls = env->FindClass("com/ss/sys/ces/a");
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p in thread %d", lev_ori, gettid());
-    jbyteArray rlev = lev_ori(env, cls, p1, barray);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p in thread %d", rlev, gettid());
-    g_vm->DetachCurrentThread();
-    return 0;
+void print_byte_array(char *buf, JNIEnv *env, jbyteArray rlev) {
+    if (rlev) {
+        int off = 0;
+        int narr = env->GetArrayLength(rlev);
+        jbyte *ba = env->GetByteArrayElements(rlev, 0);
+        for (int i = 0; i < narr; i++) {
+            off += sprintf(buf + off, "%02x", (unsigned char)ba[i]);
+        }
+    }
 }
 
-void force_call_lev(JNIEnv *env) {
+void force_call_lev(JNIEnv *env, bool wait=false, char *out=0) {
 
     int n = 64;
-    jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    //jbyte b[] = {71,57,-52,16,-33,-74,56,-78,88,-1,81,113,90,-56,-109,-114,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,-89,102,-14,26,-10,-97,-18,-41,27,113,-106,-61,36,106,-12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    jbyte b[] = {-84, -34, 116, -87, 78, 107, 73, 58, 51, -103, -6, -56, 60, 124, 8, -77, 93, 88, -78, 29, -107, -126, -81, 119, 100, 127, -55, -112, 46, 54, -82, 112, -7, -64, 1, -23, 51, 78, 110, -108, -111, 102, -126, 34, 79, -66, 78, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     jbyteArray barray = env->NewByteArray(n);
     env->SetByteArrayRegion(barray, 0, n, b);
 
+    char name[255] = "";
+
+    prctl(PR_GET_NAME, name, 0, 0);
+    //jint p1 = 1585841725;
     jint p1 = 1585841725;
     jclass cls = env->FindClass("com/ss/sys/ces/a");
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p tid %d", lev_ori, gettid());
+    char buf2[512] = "[null]";
+    print_byte_array(buf2, env, barray);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev %p tid %d %s input %s", lev_ori, gettid(), name, buf2);
+    if (wait)
+        wait_for_attach(gettid());
     jbyteArray rlev = lev_ori(env, cls, p1, barray);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev return %p", rlev);
+    if (wait)
+        syscall(1,111);
+
+    char buf[512] = "[null]";
+    print_byte_array(buf, env, rlev);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev tid %d %s return %s", gettid(), name, buf);
+    env->DeleteLocalRef(cls);
+    if (out)
+        strcpy(out, buf);
+}
+
+void *dummp_thread(void *p) {
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "dummp_thread run");
+    /*
+    const char *name = "my-thread";
+    prctl(PR_SET_NAME, name, 0, 0);
+    JNIEnv *env = 0;
+    g_vm->AttachCurrentThread(&env, 0);
+    force_call_lev(env);
+    g_vm->DetachCurrentThread();
+     */
+    return 0;
 }
 
 typedef jobject (*meta_type)(JNIEnv *env, jclass clz, jint n, jobject ctx, jobject arg);
 meta_type old_meta = 0;
-
+static int count = 0;
 jobject my_meta(JNIEnv *env, jclass clz, jint optype, jobject ctx, jobject arg) {
 
     pid_t tid = gettid();
@@ -176,13 +243,25 @@ jobject my_meta(JNIEnv *env, jclass clz, jint optype, jobject ctx, jobject arg) 
             sarg = "[unknown]";
         }
     }
+
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta call tid %d [%s] %d %p %s!!!", tid, name, optype, ctx, sarg);
 
     jobject r = old_meta(env, clz, optype, ctx, arg);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_meta tid %d return %p!!!", tid, r);
+
     /*
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force lev after meta");
-    force_call_lev(env);
+    count++;
+    if (count == 3) {
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force lev after meta");
+
+        pthread_t t;
+        pthread_create(&t, 0, dummp_thread, 0);
+        //force_call_lev(env);
+        int rp = 0;
+        //wait_for_attach(gettid());
+        //force_call_lev(env);
+        //syscall(1, 111);
+    }
      */
     return r;
 }
@@ -192,8 +271,9 @@ jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
     char name[255] = "";
 
     prctl(PR_GET_NAME, name, 0, 0);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d [%s]!!!", tid, name);
-    //wait_for_attach(tid);
+    char buf2[512] = "[null]";
+    print_byte_array(buf2, env, p2);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d [%s] input %s!!!", tid, name, buf2);
 
     /*
     int n = env->GetArrayLength(p2);
@@ -215,15 +295,43 @@ jbyteArray my_lev(JNIEnv *env, jclass thiz, jint p1, jbyteArray p2) {
     pthread_join(t, (void**)&rp);
      */
 
+    //force_call_lev(env);
+    //wait_for_attach(gettid());
     jbyteArray r = lev_ori(env, thiz, p1, p2);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d return %p!!!", tid, (void*)r);
-    //syscall(1, 231);
+
+    char buf[512] = "[null]";
+    print_byte_array(buf, env, r);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my_lev tid %d [%s] return %s!!!", tid, name, buf);
+
 
     return r;
 }
 
 
 void hook_jni(JNIEnv *env);
+
+void fake_meta(JNIEnv *env) {
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call meta %p tid %d", old_meta, gettid());
+    jclass clz = env->FindClass("com/ss/sys/ces/a");
+    old_meta(env, clz, 101, 0, env->NewStringUTF("0"));
+
+    old_meta(env, clz, 102, 0, env->NewStringUTF("1028"));
+    old_meta(env, clz, 1020, 0, env->NewStringUTF(""));
+}
+
+
+int fun(int n)//定义fun函数
+{
+    int z;
+    if (n > 2)
+    {
+        z = fun(n - 1) + fun(n - 2);//直接调用本身，由fun(n)转换为fun(n-1)+fun(n-2)
+    }
+    else
+        z = 1;//n=2时退出返回到main函数
+    return z;
+}
+
 #include <map>
 using namespace std;
 typedef jint (*jni_onload_type)(JavaVM *);
@@ -235,202 +343,55 @@ jint my_jni_onload(JavaVM *vm) {
     JNIEnv *env = 0;
     vm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
-    //hook_jni(env);
+    hook_jni(env);
     jint r = old_jni_onload(vm);
 
+    /*
     unsigned *ptr1 = (unsigned*)((unsigned)g_base_addr + 0x93da4);
     unsigned *ptr2 = (unsigned*)((unsigned)g_base_addr + 0x95f3c);
+     */
 
     char name[255] = "tp-io-21";
     //prctl(PR_SET_NAME, name, 0, 0);
     prctl(PR_GET_NAME, name, 0, 0);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "jni_onload %d %s ptr1 0x%08X ptr2 0x%08X", gettid(), name, *ptr1, *ptr2);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "jni_onload %d %s", gettid(), name);
 
     /*
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call meta after jni onload");
+    fake_meta(env);
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force call lev after jni onload");
     force_call_lev(env);
      */
-    /*
-    map<unsigned , unsigned char> m;
-    m[0x000942C8] = 0x1;
-    m[0x000942C9] = 0x0;
-    m[0x000942CA] = 0x0;
-    m[0x000942CB] = 0x0;
-    m[0x000942CC] = 0x6d;
-    m[0x000942CD] = 0xcf;
-    m[0x000942D4] = 0x2f;
-    m[0x000942D5] = 0x64;
-    m[0x000942D6] = 0x65;
-    m[0x000942D7] = 0x76;
-    m[0x000942D8] = 0x2f;
-    m[0x000942D9] = 0x6c;
-    m[0x000942DA] = 0x6f;
-    m[0x000942DB] = 0x67;
-    m[0x000942DC] = 0x2f;
-    m[0x000942DD] = 0x6d;
-    m[0x000942DE] = 0x61;
-    m[0x000942DF] = 0x69;
-    m[0x000942E0] = 0x6e;
-    m[0x000942E1] = 0x0;
-    m[0x000942E4] = 0x46;
-    m[0x000942E5] = 0x0;
-    m[0x000942E6] = 0x0;
-    m[0x000942E7] = 0x0;
-    m[0x000942E8] = 0x47;
-    m[0x000942E9] = 0x0;
-    m[0x000942EA] = 0x0;
-    m[0x000942EB] = 0x0;
-    m[0x000942EC] = 0x48;
-    m[0x000942ED] = 0x0;
-    m[0x000942EE] = 0x0;
-    m[0x000942EF] = 0x0;
-    m[0x000942F0] = 0x49;
-    m[0x000942F1] = 0x0;
-    m[0x000942F2] = 0x0;
-    m[0x000942F3] = 0x0;
-    m[0x00094304] = 0x2f;
-    m[0x00094305] = 0x64;
-    m[0x00094306] = 0x65;
-    m[0x00094307] = 0x76;
-    m[0x00094308] = 0x2f;
-    m[0x00094309] = 0x6c;
-    m[0x0009430A] = 0x6f;
-    m[0x0009430B] = 0x67;
-    m[0x0009430C] = 0x2f;
-    m[0x0009430D] = 0x72;
-    m[0x0009430E] = 0x61;
-    m[0x0009430F] = 0x64;
-    m[0x00094310] = 0x69;
-    m[0x00094311] = 0x6f;
-    m[0x00094312] = 0x0;
-    m[0x00094313] = 0x2f;
-    m[0x00094314] = 0x64;
-    m[0x00094315] = 0x65;
-    m[0x00094316] = 0x76;
-    m[0x00094317] = 0x2f;
-    m[0x00094318] = 0x6c;
-    m[0x00094319] = 0x6f;
-    m[0x0009431A] = 0x67;
-    m[0x0009431B] = 0x2f;
-    m[0x0009431C] = 0x65;
-    m[0x0009431D] = 0x76;
-    m[0x0009431E] = 0x65;
-    m[0x0009431F] = 0x6e;
-    m[0x00094320] = 0x74;
-    m[0x00094321] = 0x73;
-    m[0x00094322] = 0x0;
-    m[0x00094323] = 0x2f;
-    m[0x00094324] = 0x64;
-    m[0x00094325] = 0x65;
-    m[0x00094326] = 0x76;
-    m[0x00094327] = 0x2f;
-    m[0x00094328] = 0x6c;
-    m[0x00094329] = 0x6f;
-    m[0x0009432A] = 0x67;
-    m[0x0009432B] = 0x2f;
-    m[0x0009432C] = 0x73;
-    m[0x0009432D] = 0x79;
-    m[0x0009432E] = 0x73;
-    m[0x0009432F] = 0x74;
-    m[0x00094330] = 0x65;
-    m[0x00094331] = 0x6d;
-    m[0x00094332] = 0x0;
-    m[0x00094EA0] = 0x0;
-    m[0x00094F74] = 0x41;
-    m[0x00094F75] = 0x59;
-    m[0x00094F76] = 0x45;
-    m[0x00094F77] = 0x0;
-    m[0x00094F78] = 0x4e;
-    m[0x00094F79] = 0x45;
-    m[0x00094F7A] = 0x49;
-    m[0x00094F7B] = 0x4e;
-    m[0x00094F7C] = 0x0;
-    m[0x00094F7D] = 0x43;
-    m[0x00094F7E] = 0x5a;
-    m[0x00094F7F] = 0x4c;
-    m[0x00094F80] = 0x5f;
-    m[0x00094F81] = 0x4d;
-    m[0x00094F82] = 0x45;
-    m[0x00094F83] = 0x54;
-    m[0x00094F84] = 0x41;
-    m[0x00094F85] = 0x0;
-    m[0x00094F90] = 0xd;
-    m[0x00094F91] = 0xa;
-    m[0x00094F92] = 0x5b;
-    m[0x00094F93] = 0x25;
-    m[0x00094F94] = 0x64;
-    m[0x00094F95] = 0x5d;
-    m[0x00094F96] = 0x20;
-    m[0x00094F97] = 0x20;
-    m[0x00094F98] = 0x20;
-    m[0x00094F99] = 0x20;
-    m[0x00094F9A] = 0x6d;
-    m[0x00094F9B] = 0x65;
-    m[0x00094F9C] = 0x74;
-    m[0x00094F9D] = 0x61;
-    m[0x00094F9E] = 0x28;
-    m[0x00094F9F] = 0x25;
-    m[0x00094FA0] = 0x64;
-    m[0x00094FA1] = 0x29;
-    m[0x00094FA2] = 0xd;
-    m[0x00094FA3] = 0xa;
-    m[0x00094FA4] = 0x0;
-    m[0x00095688] = 0x80;
-    m[0x00095689] = 0x12;
-    m[0x0009568A] = 0x3c;
-    m[0x0009568B] = 0x71;
-    m[0x0009568C] = 0xc0;
-    m[0x0009568D] = 0x14;
-    m[0x0009568E] = 0x3c;
-    m[0x0009568F] = 0x71;
-    m[0x00095690] = 0x8;
-    m[0x00095691] = 0xa9;
-    m[0x00095692] = 0x36;
-    m[0x00095693] = 0x7b;
-    m[0x00095694] = 0x38;
-    m[0x00095695] = 0xf;
-    m[0x00095696] = 0x4a;
-    m[0x00095697] = 0x7b;
-    m[0x00095698] = 0x90;
-    m[0x00095699] = 0xb5;
-    m[0x0009569A] = 0x9b;
-    m[0x0009569B] = 0x7c;
-    m[0x000956B8] = 0x1;
-    m[0x000956BC] = 0x1;
-    m[0x000956C0] = 0x1;
-    m[0x000956C4] = 0x1;
-    m[0x00096404] = 0x1;
-    m[0x00096405] = 0x1;
-    m[0x00096978] = 0x68;
-    m[0x00096979] = 0x4;
-    m[0x0009697C] = 0x40;
-    m[0x0009697D] = 0x9a;
-    m[0x0009697E] = 0x36;
-    m[0x0009697F] = 0x7b;
-    m[0x00096980] = 0x52;
-    m[0x00096981] = 0x3;
-    m[0x00096A20] = 0x9;
-    m[0x00096A84] = 0x1;
-    m[0x00096A88] = 0x1;
-    m[0x00096A8C] = 0x1;
-    m[0x00096A90] = 0x1;
 
-    unsigned char *baddr = (unsigned char*)g_base_addr;
-    map<unsigned , unsigned char >::iterator it;
-    for (; it != m.end(); ++it) {
-        unsigned off = it->first;
-        unsigned char v = it->second;
-        *(baddr+off) = v;
+    //pthread_t t;
+    //pthread_create(&t, 0, dummp_thread, 0);
+    //int rp = 0;
+    //sleep(2);
+
+
+    char outbuf[512] = {0};
+    char path[256] = {0};
+    int count = 0;
+    /*
+    stop_all_others_threads();
+    while(true) {
+        //wait_for_attach(gettid());
+        char tmpbuf[512] = {0};
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before force call lev");
+        force_call_lev(env, false, tmpbuf);
+        if (strcmp(tmpbuf, outbuf) != 0) {
+            sprintf(path, "/sdcard/cms-%d.so", count++);
+            __android_log_print(ANDROID_LOG_INFO, "librev-dj", "output is different write to %s", path);
+            FILE *f = fopen(path, "wb");
+            __android_log_print(ANDROID_LOG_INFO, "librev-dj", "open return %p", f);
+            fwrite(g_base_addr, 1, 0x97000, f);
+            fclose(f);
+            strcpy(outbuf, tmpbuf);
+        }
+        sleep(1);
     }
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "force write lev");
-    */
-
-    /*
-    pthread_t t;
-    pthread_create(&t, 0, dummp_thread, 0);
-    int rp = 0;
      */
-    //pthread_join(t, (void**)&rp);
+
 
     //wait_for_attach(gettid());
     return r;
@@ -439,16 +400,18 @@ jint my_jni_onload(JavaVM *vm) {
 
 
 __attribute__((constructor)) void __init__() {
+
+    const char *pkgName = "com.ss.android.ugc.aweme";
+    const char *pkgName2 = "com.leaves.httpServer";
+
     const char *path = "/proc/self/cmdline";
     char buf[300] = {0};
     FILE *f = fopen(path, "rb");
     fread(buf, 1, sizeof(buf), f);
     fclose(f);
-    const char *pkgName = "com.ss.android.ugc.aweme";
-    const char *pkgName2 = "com.leaves.httpServer";
     //__android_log_print(ANDROID_LOG_INFO, "librev-dj", "pkg_name %s", buf);
     //__android_log_print(ANDROID_LOG_FATAL, TAG, "cmdline %s", buf);
-    if (strcmp(buf, pkgName)!=0 && strcmp(buf, pkgName2) !=0) {
+    if (strcmp(buf, pkgName2)!=0) {
         //__android_log_print(ANDROID_LOG_FATAL, TAG, "%s not the target pkgName", pkgName);
         return;
     }
@@ -520,6 +483,5 @@ __attribute__((constructor)) void __init__() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook pthread %p", pthread_create_ori);
      */
 
-    __android_log_print(ANDROID_LOG_FATAL, "librev-dj", "pkgName %s here", buf);
     //wait_for_attach();
 }

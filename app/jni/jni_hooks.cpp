@@ -90,6 +90,25 @@ jboolean my_call_static_bool_method_v(JNIEnv *env, jobject obj, jmethodID mid, v
     return r;
 }
 
+
+typedef jint (*register_native_type)(JNIEnv *env, jclass clazz, const JNINativeMethod* methods,
+                        jint nMethods);
+
+register_native_type old_register_native = 0;
+
+jint my_register_native(JNIEnv *env, jclass clazz, const JNINativeMethod* methods,
+                     jint nMethods) {
+
+    for (int i = 0; i < nMethods; i++)  {
+        const JNINativeMethod &m = methods[i];
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj",
+                            "RegisterNative name=%s sig=%s ptr=%p tid=%d", m.name, m.signature, m.fnPtr, gettid());
+    }
+
+    jint r = old_register_native(env, clazz, methods, nMethods);
+    return r;
+}
+
 void hook_jni(JNIEnv *env) {
     MSHookFunction((void*)env->functions->FindClass, (void*)my_find_class, (void**)&old_find_class);
     MSHookFunction((void*)env->functions->GetMethodID, (void*)my_get_method_id, (void**)&old_get_method_id);
@@ -102,4 +121,7 @@ void hook_jni(JNIEnv *env) {
 
     MSHookFunction((void*)env->functions->CallBooleanMethodV, (void*)my_call_bool_method_v, (void**)&old_call_bool_method_v);
     MSHookFunction((void*)env->functions->CallStaticBooleanMethodV, (void*)my_call_static_bool_method_v, (void**)&old_call_static_bool_method_v);
+
+    MSHookFunction((void*)env->functions->RegisterNatives, (void*)my_register_native, (void**)&old_register_native);
+
 }
