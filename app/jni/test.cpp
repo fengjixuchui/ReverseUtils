@@ -411,7 +411,7 @@ __attribute__((constructor)) void __init__() {
     fclose(f);
     //__android_log_print(ANDROID_LOG_INFO, "librev-dj", "pkg_name %s", buf);
     //__android_log_print(ANDROID_LOG_FATAL, TAG, "cmdline %s", buf);
-    if (strcmp(buf, pkgName)!=0) {
+    if (strcmp(buf, pkgName2)!=0) {
         //__android_log_print(ANDROID_LOG_FATAL, TAG, "%s not the target pkgName", pkgName);
         return;
     }
