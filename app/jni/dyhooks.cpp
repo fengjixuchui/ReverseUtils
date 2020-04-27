@@ -14,6 +14,8 @@
 #include <dirent.h>
 #include "StackDump.h"
 #include "ElfUtils.h"
+#include "hook_utils.h"
+#if false
 
 #define TAG "librev-dj"
 
@@ -292,8 +294,7 @@ void fake_meta(JNIEnv *env) {
 
 #include <map>
 using namespace std;
-typedef jint (*jni_onload_type)(JavaVM *);
-jni_onload_type old_jni_onload = 0;
+JNI_OnLoad_Type g_old_jni_onload=0;
 jint my_jni_onload(JavaVM *vm) {
 
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my jni onload call tid %d", gettid());
@@ -302,7 +303,7 @@ jint my_jni_onload(JavaVM *vm) {
     vm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
     hook_jni(env);
-    jint r = old_jni_onload(vm);
+    jint r = g_old_jni_onload(vm);
 
     /*
     unsigned *ptr1 = (unsigned*)((unsigned)g_base_addr + 0x93da4);
@@ -363,10 +364,7 @@ void hook_common(void *handle) {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cms load base %p", g_base_addr);
     void *ori_load = dlsym(handle, "JNI_OnLoad");
 
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook jni_onload");
-    MSHookFunction((void*)ori_load, (void*)my_jni_onload, (void**)&old_jni_onload);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "after hook jni_onload %p", old_jni_onload);
-
+    g_old_jni_onload = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_onload);
 
     void *lev = (void*)((unsigned)g_base_addr + 0x57788+1);
 
@@ -408,16 +406,7 @@ __attribute__((constructor)) void __init__() {
 
     const char *pkgName = "com.ss.android.ugc.aweme";
     const char *pkgName2 = "com.leaves.httpServer";
-
-    const char *path = "/proc/self/cmdline";
-    char buf[300] = {0};
-    FILE *f = fopen(path, "rb");
-    fread(buf, 1, sizeof(buf), f);
-    fclose(f);
-    //__android_log_print(ANDROID_LOG_INFO, "librev-dj", "pkg_name %s", buf);
-    //__android_log_print(ANDROID_LOG_FATAL, TAG, "cmdline %s", buf);
-    if (strcmp(buf, pkgName)!=0) {
-        //__android_log_print(ANDROID_LOG_FATAL, TAG, "%s not the target pkgName", pkgName);
+    if (!is_package_name(pkgName)) {
         return;
     }
 
@@ -437,3 +426,4 @@ __attribute__((constructor)) void __init__() {
 
 
 }
+#endif

@@ -14,7 +14,6 @@
 #include "StackDump.h"
 #include "ElfUtils.h"
 
-
 typedef jclass (*find_class_type)(JNIEnv *, const char *);
 find_class_type old_find_class = 0;
 jclass my_find_class(JNIEnv *env, const char *name) {
