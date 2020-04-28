@@ -13,6 +13,7 @@
 #include <linux/prctl.h>
 #include "StackDump.h"
 #include "ElfUtils.h"
+#include "hook_utils.h"
 
 typedef jclass (*find_class_type)(JNIEnv *, const char *);
 find_class_type old_find_class = 0;
@@ -113,7 +114,7 @@ void hook_jni(JNIEnv *env) {
     MSHookFunction((void*)env->functions->GetMethodID, (void*)my_get_method_id, (void**)&old_get_method_id);
     MSHookFunction((void*)env->functions->GetStaticMethodID, (void*)my_get_static_method_id, (void**)&old_get_static_method_id);
     MSHookFunction((void*)env->functions->CallObjectMethodV, (void*)my_call_object_method_v, (void**)&old_call_object_method_v);
-    MSHookFunction((void*)env->functions->CallStaticObjectMethod, (void*)my_call_static_object_method_v, (void**)&old_call_static_object_method_v);
+    MSHookFunction((void*)env->functions->CallStaticObjectMethodV, (void*)my_call_static_object_method_v, (void**)&old_call_static_object_method_v);
 
     MSHookFunction((void*)env->functions->CallIntMethodV, (void*)my_call_int_method_v, (void**)&old_call_int_method_v);
     MSHookFunction((void*)env->functions->CallStaticIntMethodV, (void*)my_call_static_int_method_v, (void**)&old_call_static_int_method_v);
