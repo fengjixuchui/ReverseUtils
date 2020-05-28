@@ -6,8 +6,11 @@ import android.net.DhcpInfo;
 import android.net.wifi.WifiManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -21,11 +24,28 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private int testSum(int from, int to) {
-        int sum=0;
-        for (int i = from; i < to;i++) {
-            sum+=i;
-        }
-        return sum;
+
+        int i = 5;
+        float j = 1.1f;
+
+        double q = 11.1;
+        Object sb[] = {"abc", "bbb"};
+        Object os[] = new Object[3];
+        os[0] = i;
+        os[1] = j;
+        os[2] = sb;
+        short b = 1;
+
+        String ss = String.valueOf(b);
+
+        String s = Arrays.toString(os);
+        byte [][]bb = new byte[3][3];
+        String kk = Arrays.toString(bb);
+        String log = String.format("log %s", s);
+
+        Log.i("tag", log);
+
+        return 0;
     }
 
     private String getStr() {
@@ -53,8 +73,6 @@ public class MainActivity extends AppCompatActivity {
 
         // Example of a call to a native method
         TextView tv = (TextView) findViewById(R.id.sample_text);
-        tv.setText(stringFromJNI());
-        callSetText(tv);
         int s = testSum(1, 10);
         String str = getStr();
         Toast.makeText(this, s+str, Toast.LENGTH_LONG).show();

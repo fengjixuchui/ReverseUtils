@@ -35,27 +35,6 @@ Java_com_reverse_my_reverseutils_MainActivity_stringFromJNI(
     return env->NewStringUTF(hello.c_str());
 }
 
-int get_tracer(pid_t pid) {
-    char line[255] = {0};
-
-    char name[255] = {0};
-    sprintf(name, "/proc/self/task/%d/status", pid);
-    FILE *f = fopen(name, "r");
-
-    int iid = 0;
-    while(!feof(f)) {
-        fgets(line, sizeof(line), f);
-        if (strstr(line, "TracerPid")) {
-            const char *sp = strchr(line, ':');
-            const char *id = sp + 1;
-            iid = atoi(id);
-            break;
-        }
-    }
-    fclose(f);
-    return iid;
-
-}
 
 int get_tids(void (*func)(pid_t, void *aux),void*aux){
     DIR *proc_dir;
@@ -83,19 +62,6 @@ int get_tids(void (*func)(pid_t, void *aux),void*aux){
 }
 
 
-void wait_for_attach() {
-    pid_t pid = gettid();
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "waiting attach %d...", pid);
-    while (1){
-        int id = get_tracer(pid);
-        if (id != 0) {
-            __android_log_print(ANDROID_LOG_INFO, "librev-dj", "debugger attached trace_id:%d...", id);
-            break;
-        }
-        sleep(1);
-    }
-
-}
 
 
 typedef int (*pthread_create_type)(pthread_t *thread, pthread_attr_t const * attr,
