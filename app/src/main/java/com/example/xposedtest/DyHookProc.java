@@ -19,45 +19,6 @@ import static de.robv.android.xposed.XposedHelpers.findAndHookMethod;
 
 public class DyHookProc implements IXposedHookLoadPackage {
 
-    public static void writeLog(String dataDir, String log) {
-        File logFile = new File(dataDir, "mapsLog.txt");
-        FileWriter fw = null;
-        try {
-            fw = new FileWriter(logFile, true);
-            fw.write(log + "\n");
-            fw.flush();
-            fw.close();
-        } catch (FileNotFoundException e) {
-            System.out.println("file not found!");
-        } catch (IOException e) {
-            System.out.println("Output error!");
-        }
-    }
-
-    private void printMaps(String dataDir) {
-
-        List<String> r = new ArrayList<>();
-        BufferedReader reader = null;
-        try {
-            reader = new BufferedReader(new FileReader("/proc/self/maps"));
-            String line = reader.readLine();
-            while (!line.isEmpty()) {
-                writeLog(dataDir, line);
-                line = reader.readLine();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private String bytes2Hex(byte[] bytes) {
-        StringBuffer result = new StringBuffer();
-        for (byte b : bytes) {
-            result.append(String.format("%02X", b));
-        }
-        return result.toString();
-    }
-
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         //app启动时调用
