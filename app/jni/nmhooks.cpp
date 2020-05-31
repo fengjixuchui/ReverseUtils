@@ -51,7 +51,6 @@ static void force_call_serial(JNIEnv *env) {
     jstring jr = old_serialdata(env, cls, jurl, serial);
 
     const char *r = env->GetStringUTFChars(jr, 0);
-    env->ReleaseByteArrayElements()
 
     __android_log_print(ANDROID_LOG_INFO, TAG, "force call serial return %s", r);
     env->PopLocalFrame(0);
