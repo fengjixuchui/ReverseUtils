@@ -11,7 +11,7 @@ android {
         ndk {
             moduleName "HelloTest"
             ldLibs "log", "z", "m"
-            abiFilters "armeabi", "armeabi-v7a", "x86"
+            abiFilters "armeabi-v7a"
         }
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
