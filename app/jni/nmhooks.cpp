@@ -57,7 +57,7 @@ static void force_call_serial(JNIEnv *env) {
 }
 
 static JNI_OnLoad_Type old_jni_onload = 0;
-jint my_jni_on_load(JavaVM *vm) {
+jint my_jni_on_load(JavaVM *vm, void *reserve) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload call");
     MapInfo info = {0};
     get_map_infos(&info, "libpoison.so");
@@ -65,7 +65,7 @@ jint my_jni_on_load(JavaVM *vm) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "libpoison map base %p", info.baseAddr);
     g_load_base = info.baseAddr;
     //hook_jni(env);
-    int r = old_jni_onload(vm);
+    int r = old_jni_onload(vm, reserve);
 
 
     void *serial = (void*)((unsigned)info.baseAddr + 0x00043CD0 + 1);
