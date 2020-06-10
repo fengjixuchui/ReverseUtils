@@ -25,6 +25,7 @@ static JNI_OnLoad_Type old_jni_onload_avmp = 0;
 typedef jobject (*doCommandNative_type)(JNIEnv *env, jclass clz, jint cmd, jobjectArray array);
 doCommandNative_type old_doCommandNative = 0;
 
+
 void print_object_array(JNIEnv *env, jobjectArray array) {
     env->PushLocalFrame(20);
     jclass cls = env->FindClass("java/lang/Object");
@@ -52,7 +53,7 @@ void print_object_array(JNIEnv *env, jobjectArray array) {
 }
 
 
-static void force_call_cmd_10401(JNIEnv *env, jclass cls) {
+void force_call_cmd_10401(JNIEnv *env, jclass cls) {
     env->PushLocalFrame(20);
     jclass mapClass = env->FindClass("java/util/HashMap");
     jmethodID init = env->GetMethodID(mapClass, "<init>", "()V");
@@ -103,16 +104,25 @@ jobject my_doCommandNative(JNIEnv *env, jclass clz, jint cmd, jobjectArray array
 
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "call my_doCommandNative %d", cmd);
     print_object_array(env, array);
+    if (cmd == 60902) {
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd 60902 inner array");
+        jobjectArray innerArr = (jobjectArray)env->GetObjectArrayElement(array, 3);
+
+        print_object_array(env, innerArr);
+
+        jbyteArray jb2 = (jbyteArray)env->GetObjectArrayElement(innerArr, 1);
+        jbyte *b2 = env->GetByteArrayElements(jb2, 0);
+        int nb2 = env->GetArrayLength(jb2);
+        char *blob2 = (char*)malloc(nb2+1);
+        memset(blob2, 0, nb2+1);
+        memcpy(blob2, b2, nb2);
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd 60902 content %s", blob2);
+        free(blob2);
+        env->ReleaseByteArrayElements(jb2, b2, 0);
+    }
 
     jobject r = old_doCommandNative(env, clz, cmd, array);
-    __android_log_print(ANDROID_LOG_INFO, "librev-dj", "call my_doCommandNative return %p", r);
-    if (cmd == 10401) {
-        jstring rs = (jstring)r;
-        const char * crs = env->GetStringUTFChars(rs, 0);
-        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd 10401 return %s", crs);
-        env->ReleaseStringUTFChars(rs, crs);
-    }
-    else if (cmd == 60902) {
+    if (cmd == 60902) {
         //avmp对签名再签名返回值
         jbyteArray jb = (jbyteArray)r;
         jbyte *b = env->GetByteArrayElements(jb, 0);
@@ -123,6 +133,23 @@ jobject my_doCommandNative(JNIEnv *env, jclass clz, jint cmd, jobjectArray array
         __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd 60902 return %s", blob);
         free(blob);
         env->ReleaseByteArrayElements(jb, b, 0);
+
+
+    }
+    else if (!r) {
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd %d return is null", cmd);
+    }
+    else {
+
+        env->PushLocalFrame(20);
+        jclass cls = env->FindClass("java/lang/Object");
+        jmethodID m = env->GetMethodID(cls, "toString", "()Ljava/lang/String;");
+
+        jstring s = (jstring) env->CallObjectMethod(r, m);
+        const char *str = env->GetStringUTFChars(s, 0);
+
+        __android_log_print(ANDROID_LOG_INFO, "librev-dj", "cmd %d return %s", cmd, str);
+        env->PopLocalFrame(0);
     }
     /*
     if (cmd == 10101) {
@@ -133,7 +160,7 @@ jobject my_doCommandNative(JNIEnv *env, jclass clz, jint cmd, jobjectArray array
 }
 
 jint my_jni_on_load(JavaVM *vm, void *reserve) {
-    __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload call");
+    __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload call reserve %p", reserve);
     MapInfo info = {0};
     get_map_infos(&info, "libsgmainso-6.4.163.so");
 
@@ -157,8 +184,8 @@ jint my_jni_on_load(JavaVM *vm, void *reserve) {
 
 
 jint my_jni_on_load_avmp(JavaVM *vm, void *reverve) {
-    __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload_avmp call");
-    DUMP_CALL_STACK("librev")
+    __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload_avmp call reserve %p", reverve);
+    //DUMP_CALL_STACK("librev")
     int r = old_jni_onload_avmp(vm, reverve);
     __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload_avmp return");
     return r;
@@ -172,7 +199,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 
-__attribute__((constructor)) void __init_nm() {
+__attribute__((constructor)) void __init_xiami() {
 
     if (!is_package_name(pkgName, true)) {
         return;
@@ -186,7 +213,7 @@ __attribute__((constructor)) void __init_nm() {
 
     __android_log_print(ANDROID_LOG_INFO, TAG, "dlopen sgmain return %p", lib);
 
-    //old_jni_onload = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
+    old_jni_onload = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
 
     char avmp_path[255];
     sprintf(avmp_path, "/data/data/%s/lib/libsgavmpso-6.4.35.so", pkgName);

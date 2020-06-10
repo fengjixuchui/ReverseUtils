@@ -110,6 +110,28 @@ jint my_register_native(JNIEnv *env, jclass clazz, const JNINativeMethod* method
     return r;
 }
 
+
+typedef jobject (*get_object_array_element_type)(JNIEnv *env, jobjectArray array, jsize index);
+get_object_array_element_type old_get_object_array_element = 0;
+
+jobject my_GetObjectArrayElement(JNIEnv *env, jobjectArray array, jsize index) {
+    jobject r = old_get_object_array_element(env, array, index);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj",
+                        "GetObjectArrayElement %p %d tid %d return %p", array, index,
+                        gettid(), r);
+    return r;
+}
+
+typedef jclass (*get_object_class_type)(JNIEnv *env, jobject obj);
+get_object_class_type old_get_object_class = 0;
+
+jobject my_GetObjectClass(JNIEnv *env, jobject obj) {
+    jobject r = old_get_object_class(env, obj);
+    __android_log_print(ANDROID_LOG_INFO, "librev-dj",
+                        "GetObjectClass %p tid %d return %p", obj,
+                        gettid(), r);
+    return r;
+}
 void hook_jni(JNIEnv *env) {
     MSHookFunction((void*)env->functions->FindClass, (void*)my_find_class, (void**)&old_find_class);
     MSHookFunction((void*)env->functions->GetMethodID, (void*)my_get_method_id, (void**)&old_get_method_id);
@@ -124,5 +146,12 @@ void hook_jni(JNIEnv *env) {
     MSHookFunction((void*)env->functions->CallStaticBooleanMethodV, (void*)my_call_static_bool_method_v, (void**)&old_call_static_bool_method_v);
 
     MSHookFunction((void*)env->functions->RegisterNatives, (void*)my_register_native, (void**)&old_register_native);
+
+
+    MSHookFunction((void*)env->functions->GetObjectArrayElement, (void*)my_GetObjectArrayElement, (void**)&old_get_object_array_element);
+
+    MSHookFunction((void*)env->functions->GetObjectClass, (void*)my_GetObjectClass, (void**)&old_get_object_class);
+
+    //env->GetObjectClass()
 
 }

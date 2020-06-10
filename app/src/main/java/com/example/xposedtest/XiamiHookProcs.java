@@ -76,27 +76,21 @@ public class XiamiHookProcs implements IXposedHookLoadPackage {
                         XposedBridge.log("return " + r.toString());
                     }
                 });
-        /*
-        findAndHookMethod("java.lang.Runtime",
-                lpparam.classLoader, "loadLibrary", String.class,
-                new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        super.beforeHookedMethod(param);
-                        String str = (String)param.args[0];
-                        XposedBridge.log("***************************loadLibrary*****************************");;
-                        XposedBridge.log("load  " + str);
+        String clsName = "com.taobao.wireless.security.adapter.datacollection.DeviceInfoCapturer";
+        XposedUtils.superHook(clsName, "doCommandForString", int.class, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                super.beforeHookedMethod(param);
+            }
 
-                    }
-
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                        super.afterHookedMethod(param);
-                        XposedBridge.log("after load");
-                    }
-                });
-
-         */
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                super.afterHookedMethod(param);
+                int id = (int)param.args[0];
+                String r = (String) param.getResult();
+                XposedBridge.log(String.format("doCommandForString params %d return %s", id, r));
+            }
+        });
 
     }
 }
