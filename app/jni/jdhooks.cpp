@@ -86,14 +86,14 @@ int my_connect(int socket, sockaddr *addr, socklen_t socklen) {
 }
 
 
-static JNI_OnLoad_Type old_jni_onload_jd = 0;
-jint my_jni_on_load(JavaVM *vm) {
+static JNI_OnLoad_Type old_jni_onload = 0;
+jint my_jni_on_load(JavaVM *vm, void *reserve) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "jd jni_onload call");
     s_vm = vm;
     JNIEnv *env = 0;
     vm->GetEnv((void**)&env, JNI_VERSION_1_6);
     //hook_jni(env);
-    int r = old_jni_onload_jd(vm);
+    int r = old_jni_onload(vm, reserve);
     __android_log_print(ANDROID_LOG_INFO, TAG, "jd jni_onload return");
     return r;
 }
@@ -122,7 +122,7 @@ __attribute__((constructor)) void __init_jd() {
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "jd load base %p", g_jd_base_addr);
     void *ori_load = dlsym(lib, "JNI_OnLoad");
 
-    old_jni_onload_jd = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
+    old_jni_onload = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
 
 
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "before hook connect");

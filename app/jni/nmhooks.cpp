@@ -12,8 +12,8 @@
 #include "hook_utils.h"
 #include "ElfUtils.h"
 
+#if 0
 #define TAG "librev-dj"
-
 void *g_load_base = 0;
 typedef jstring (*serialdata_type)(JNIEnv *env, jclass clz, jstring url, jstring str);
 serialdata_type old_serialdata = 0;
@@ -56,8 +56,8 @@ static void force_call_serial(JNIEnv *env) {
     env->PopLocalFrame(0);
 }
 
-static JNI_OnLoad_Type old_jni_onload_jd = 0;
-jint my_jni_on_load(JavaVM *vm) {
+static JNI_OnLoad_Type old_jni_onload = 0;
+jint my_jni_on_load(JavaVM *vm, void *reserve) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "my_jni_onload call");
     MapInfo info = {0};
     get_map_infos(&info, "libpoison.so");
@@ -65,7 +65,7 @@ jint my_jni_on_load(JavaVM *vm) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "libpoison map base %p", info.baseAddr);
     g_load_base = info.baseAddr;
     //hook_jni(env);
-    int r = old_jni_onload_jd(vm);
+    int r = old_jni_onload(vm, reserve);
 
 
     void *serial = (void*)((unsigned)info.baseAddr + 0x00043CD0 + 1);
@@ -109,10 +109,11 @@ __attribute__((constructor)) void __init_nm() {
     __android_log_print(ANDROID_LOG_INFO, TAG, "dlopen return %p", lib);
 
 
-    old_jni_onload_jd = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
+    old_jni_onload = hook_jni_onload((JNI_OnLoad_Type)ori_load, my_jni_on_load);
     /*
 
     wait_for_attach();
      */
 }
+#endif
 

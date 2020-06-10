@@ -261,7 +261,7 @@ void fake_meta(JNIEnv *env) {
 #include <map>
 using namespace std;
 JNI_OnLoad_Type g_old_jni_onload=0;
-jint my_jni_onload(JavaVM *vm) {
+jint my_jni_onload(JavaVM *vm, void *reserve) {
 
     __android_log_print(ANDROID_LOG_INFO, "librev-dj", "my jni onload call tid %d", gettid());
     g_vm = vm;
@@ -269,7 +269,7 @@ jint my_jni_onload(JavaVM *vm) {
     vm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
     hook_jni(env);
-    jint r = g_old_jni_onload(vm);
+    jint r = g_old_jni_onload(vm, reserve);
 
     /*
     unsigned *ptr1 = (unsigned*)((unsigned)g_base_addr + 0x93da4);

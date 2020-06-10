@@ -3,7 +3,7 @@
 //
 
 #include <jni.h>
-typedef jint (*JNI_OnLoad_Type)(JavaVM *);
+typedef jint (*JNI_OnLoad_Type)(JavaVM *, void *reserve);
 JNI_OnLoad_Type hook_jni_onload(JNI_OnLoad_Type ori_load, JNI_OnLoad_Type new_jni_onload);
 
 bool is_package_name(const char *pkgName, bool useLike=false);

@@ -1,15 +1,21 @@
 package com.reverse.my.reverseutils;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.net.DhcpInfo;
 import android.net.wifi.WifiManager;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
@@ -73,10 +79,21 @@ public class MainActivity extends AppCompatActivity {
 
         // Example of a call to a native method
         TextView tv = (TextView) findViewById(R.id.sample_text);
+        Class c = new byte[0].getClass();
+        String n = c.getName();
+        Class c2 = c.getClass();
+        Integer i = new Integer(0);
+        Class cl = i.getClass();
+        String n2 = cl.getName();
+        String ssss= this.getPackageName();
         int s = testSum(1, 10);
         String str = getStr();
         Toast.makeText(this, s+str, Toast.LENGTH_LONG).show();
         ApplicationInfo info = this.getApplicationInfo();
+        File f = this.getFilesDir();
+        String ss = this.getApplicationInfo().sourceDir;
+        String t = this.getPackageCodePath();
+
         try {
             WifiManager mgr = (WifiManager) this.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             DhcpInfo d = mgr.getDhcpInfo();
